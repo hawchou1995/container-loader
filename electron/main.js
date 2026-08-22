@@ -58,14 +58,30 @@ function createWindow() {
             `JSON.stringify({ready: document.readyState, boot: window.__APP_BOOTED__||false, err: window.__APP_ERROR__||null})`
           );
           console.log('[SMOKE] boot=' + snap);
-          // 自动执行一次装柜（b1×50, b2×30）验证算法+UI 集成
+          // 自动执行一次装柜（b1×80, b2×40, b3×10）验证算法+UI 集成
           const loadResult = await mainWindow.webContents.executeJavaScript(`(async () => {
             const inp = [...document.querySelectorAll('#auto-boxes input[data-boxid]')];
             const setV = (id, n) => { const i = inp.find(x => x.dataset.boxid === id); if (i) i.value = n; };
             setV('b1', 80); setV('b2', 40); setV('b3', 10);
+            const ui = {
+              rotateChk: !!document.querySelector('#auto-rotate'),
+              modeSel: !!document.querySelector('#auto-mode'),
+              importBtn: !!document.querySelector('#btn-import-csv'),
+              csvScript: typeof window.csvImporter !== 'undefined'
+            };
             document.querySelector('#btn-auto-run').click();
             await new Promise(r => setTimeout(r, 400));
-            return JSON.stringify({ cabs: window.state.cabinets.length, boxes: window.state.cabinets.reduce((s,c)=>s+c.boxes.length,0), status: document.getElementById('auto-status').textContent });
+            const r1 = { cabs: window.state.cabinets.length, boxes: window.state.cabinets.reduce((s,c)=>s+c.boxes.length,0), status: document.getElementById('auto-status').textContent };
+            // 重量优先模式再跑一次
+            document.querySelector('#auto-mode').value = 'weight';
+            const modeNow = document.querySelector('#auto-mode').value;
+            document.querySelector('#auto-rotate').checked = false;
+            const rotNow = document.querySelector('#auto-rotate').checked;
+            document.querySelector('#btn-auto-run').click();
+            await new Promise(r => setTimeout(r, 400));
+            const modeAfter = document.querySelector('#auto-mode').value;
+            const r2 = { modeNow, rotNow, modeAfter, cabs: window.state.cabinets.length, boxes: window.state.cabinets.reduce((s,c)=>s+c.boxes.length,0), status: document.getElementById('auto-status').textContent };
+            return JSON.stringify({ ui, r1, r2 });
           })()`);
           console.log('[SMOKE] autoload=' + loadResult);
           await new Promise(r => setTimeout(r, 800));

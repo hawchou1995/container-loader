@@ -161,12 +161,15 @@ function renderBoxList() {
 }
 
 function renderAutoBoxes() {
+  // 保留用户已填数量（自动装载后的 refreshAll 会重建列表，不清空输入）
+  const cur = {};
+  document.querySelectorAll('#auto-boxes input[data-boxid]').forEach(i => { cur[i.dataset.boxid] = i.value; });
   const ab = $('#auto-boxes');
   ab.innerHTML = window.state.boxes.map(b => `
     <div class="ab-row">
       <span class="color-dot" style="background:${b.color}"></span>
       <label title="${esc(b.name)}">${esc(b.name)}</label>
-      <input type="number" min="0" value="0" data-boxid="${b.id}">
+      <input type="number" min="0" value="${cur[b.id] != null ? cur[b.id] : 0}" data-boxid="${b.id}">
       <span class="unit">箱</span>
     </div>`).join('');
 }
@@ -293,11 +296,13 @@ function autoLoad() {
     weight: b.weight, color: b.color, maxStack: (b.max || b.maxStack || 8), rotatable: b.rotatable !== false
   }));
   const container = { ...window.state.containers[0] };
+  const allowRotate = $('#auto-rotate').checked;
+  const mode = $('#auto-mode').value;
 
   $('#auto-status').textContent = '计算中…';
   // 让 UI 先刷新
   setTimeout(() => {
-    const result = window.packer.packAll(container, boxTypes, counts, { maxContainers: 10, iterations: 60 });
+    const result = window.packer.packAll(container, boxTypes, counts, { maxContainers: 10, iterations: 60, allowRotate, mode });
     window.state.cabinets = result.containers.map(c => ({
       container: { ...c.container },
       boxes: c.boxes.map(b => ({
@@ -321,6 +326,37 @@ function autoLoad() {
       toast('✓ ' + result.gapReport, 'ok');
     }
   }, 30);
+}
+
+/* ---------------- CSV 导入箱型 ---------------- */
+
+async function importBoxesCSV() {
+  const file = await window.clAPI.openDialog({
+    title: '导入箱型 CSV',
+    filters: [
+      { name: 'CSV / 文本', extensions: ['csv', 'txt'] },
+      { name: '所有文件', extensions: ['*'] }
+    ]
+  });
+  if (!file) return;
+  let text;
+  try {
+    text = await window.clAPI.readFileAny(file);
+  } catch (e) {
+    toast('读取文件失败：' + e.message, 'err');
+    return;
+  }
+  const rows = window.csvImporter.parseCSV(text);
+  const res = window.csvImporter.mergeBoxesFromCSV(window.state.boxes, rows);
+  if (res.errors.length && res.added + res.updated === 0) {
+    toast('导入失败：' + res.errors[0], 'err');
+    return;
+  }
+  window.state.boxes = res.boxes;
+  saveLibraries();
+  renderBoxList();
+  const msg = `导入完成：新增 ${res.added} 条，更新 ${res.updated} 条，跳过 ${res.skipped} 条`;
+  toast(res.errors.length ? msg + '；' + res.errors[0] : msg, res.errors.length ? '' : 'ok');
 }
 
 /* ---------------- 持久化 ---------------- */
@@ -407,6 +443,7 @@ function bindUI() {
   });
 
   $('#btn-add-box').addEventListener('click', () => openBoxModal(null));
+  $('#btn-import-csv').addEventListener('click', importBoxesCSV);
   $('#btn-add-container').addEventListener('click', () => openContainerModal(null));
 
   document.querySelectorAll('[data-view]').forEach(btn => {

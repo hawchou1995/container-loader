@@ -3,8 +3,9 @@
 /**
  * packer.js — 自动装载算法（纯 JS，无依赖，Node/浏览器通用）
  *
- * 策略：体积优先降序 + 最深最左最下(DBL)放置 + 剩余空间分割(guillotine)
+ * 策略：体积/重量优先降序 + 最深最左最下(DBL)放置 + 剩余空间分割(guillotine)
  *       + 局部搜索迭代（随机扰动排序 N 轮取最优）+ 载重/承压校验 + 多柜分装
+ *       + 可选箱子旋转（allowRotate，尊重单箱型 rotatable 标记）
  *
  * 3D 装箱为 NP-Hard，本算法为启发式逼近，输出与体积上界的差距报告。
  */
@@ -41,6 +42,7 @@ function expandItems(boxTypes, counts) {
         weight: bt.weight || 0,
         color: bt.color || '#888888',
         maxStack: Math.max(1, bt.maxStack || 10),
+        rotatable: bt.rotatable !== false,
         vol: bt.L * bt.W * bt.H
       });
     }
@@ -48,9 +50,10 @@ function expandItems(boxTypes, counts) {
   return items;
 }
 
-/** 箱子 6 种朝向（去重） */
-function orientations(it) {
+/** 箱子朝向（去重）：allowRotate=false 时仅标准朝向 */
+function orientations(it, allowRotate = true) {
   const { dx, dy, dz } = it;
+  if (!allowRotate || it.rotatable === false) return [[dx, dy, dz]];
   const perms = [
     [dx, dy, dz], [dx, dz, dy], [dy, dx, dz],
     [dy, dz, dx], [dz, dx, dy], [dz, dy, dx]
@@ -65,7 +68,7 @@ function orientations(it) {
 }
 
 /** 单柜装载：把 items 尽量塞进 container。返回 {boxes, usedVolume, usedWeight, remaining} */
-function packContainer(container, items) {
+function packContainer(container, items, { allowRotate = true } = {}) {
   const spaces = [{ x: 0, y: 0, z: 0, w: container.L, d: container.W, h: container.H }];
   const placed = [];
   const columns = []; // 每根承压柱：{x,y,w,d,count,maxStack}
@@ -79,9 +82,10 @@ function packContainer(container, items) {
       continue;
     }
     let bestSpace = -1, bestO = null;
+    const orients = orientations(it, allowRotate);
     for (let s = 0; s < spaces.length && bestSpace === -1; s++) {
       const sp = spaces[s];
-      for (const o of orientations(it)) {
+      for (const o of orients) {
         if (o[0] <= sp.w && o[1] <= sp.d && o[2] <= sp.h) {
           // 承压校验：若放在支撑物之上，检查该柱已叠层数
           if (sp.z > 0) {
@@ -138,14 +142,26 @@ function packContainer(container, items) {
 
 /**
  * 多柜分装：依次开柜，能放就放，放不下开下一个柜。
- * 局部搜索：多轮随机扰动物品顺序，取「装进箱数最多 + 占用体积最大」的布局。
+ * 局部搜索：多轮随机扰动物品顺序，取「装进箱数最多 + 体积/重量利用最大」的布局。
+ *
+ * @param {object} opts
+ * @param {number}  opts.maxContainers  最大柜数
+ * @param {number}  opts.iterations     局部搜索轮数
+ * @param {boolean} opts.allowRotate    是否允许箱子旋转（默认 true）
+ * @param {string}  opts.mode           'volume' 体积优先（默认）| 'weight' 重量优先
  */
-function packAll(container, boxTypes, counts, { maxContainers = 10, iterations = 60 } = {}) {
+function packAll(container, boxTypes, counts, { maxContainers = 10, iterations = 60, allowRotate = true, mode = 'volume' } = {}) {
   const allItems = expandItems(boxTypes, counts);
-  allItems.sort((a, b) => b.vol - a.vol); // 体积降序
+  // 排序：体积优先按体积降序；重量优先按重量降序（同重再按体积降序）
+  if (mode === 'weight') {
+    allItems.sort((a, b) => b.weight - a.weight || b.vol - a.vol);
+  } else {
+    allItems.sort((a, b) => b.vol - a.vol);
+  }
 
   const capVol = container.L * container.W * container.H;
   const totalVol = allItems.reduce((s, i) => s + i.vol, 0);
+  const totalWeight = allItems.reduce((s, i) => s + i.weight, 0);
   const upperBound = Math.ceil(totalVol / capVol);
 
   let best = null;
@@ -155,14 +171,15 @@ function packAll(container, boxTypes, counts, { maxContainers = 10, iterations =
     let remaining = items;
 
     for (let ci = 0; ci < maxContainers && remaining.length; ci++) {
-      const res = packContainer(container, remaining);
+      const res = packContainer(container, remaining, { allowRotate });
       if (res.boxes.length) {
         containers.push({
           container,
           boxes: res.boxes,
           usedVolume: res.usedVolume,
           usedWeight: res.usedWeight,
-          volumeRate: res.usedVolume / capVol
+          volumeRate: res.usedVolume / capVol,
+          weightRate: container.maxWeight ? res.usedWeight / container.maxWeight : 0
         });
       }
       remaining = res.remaining;
@@ -170,9 +187,15 @@ function packAll(container, boxTypes, counts, { maxContainers = 10, iterations =
 
     const packed = items.length - remaining.length;
     const usedVol = containers.reduce((s, c) => s + c.usedVolume, 0);
-    const score = packed * 1e15 + usedVol;
+    const usedW = containers.reduce((s, c) => s + c.usedWeight, 0);
+    // 评分：箱数优先，其次按模式看重体积或载重。
+    // 注意 usedVol 单位是 mm³（数值巨大），重量优先模式须归一化为 m³ 再与重量项比较，
+    // 否则体积项会淹没重量项（实测 3.4e9 mm³ 体积 vs 75kg×1e6 的坑）。
+    const score = mode === 'weight'
+      ? packed * 1e15 + usedW * 1e6 + usedVol / 1e9
+      : packed * 1e15 + usedVol;
     if (!best || score > best.score) {
-      best = { score, containers, remaining, packed, total: items.length, usedVol };
+      best = { score, containers, remaining, packed, total: items.length, usedVol, usedWeight: usedW };
     }
     if (remaining.length === 0) {
       const singleOk = containers.length <= 1;
@@ -183,17 +206,23 @@ function packAll(container, boxTypes, counts, { maxContainers = 10, iterations =
   const volumeUtil = best.containers.length
     ? best.usedVol / (capVol * best.containers.length)
     : 0;
+  const maxW = best.containers.length ? best.containers[0].container.maxWeight || 0 : 0;
+  const weightUtil = maxW ? best.usedWeight / (maxW * best.containers.length) : 0;
+  const modeName = mode === 'weight' ? '重量优先' : '体积优先';
   return {
+    mode,
     containers: best.containers,
     remaining: best.remaining,
     packed: best.packed,
     total: best.total,
     usedVol: best.usedVol,
+    usedWeight: best.usedWeight,
     volumeUtil,
+    weightUtil,
     upperBound,
     gapReport: best.remaining.length
-      ? `已用 ${best.containers.length} 柜装 ${best.packed}/${best.total} 箱，剩余 ${best.remaining.length} 箱未装下（超出最大柜数 ${maxContainers} 或几何/承压限制）`
-      : `已用 ${best.containers.length} 柜装完 ${best.total} 箱，平均容积利用率 ${(volumeUtil * 100).toFixed(1)}%，理论体积上界 ${upperBound} 柜`
+      ? `[${modeName}] 已用 ${best.containers.length} 柜装 ${best.packed}/${best.total} 箱，剩余 ${best.remaining.length} 箱未装下（超出最大柜数 ${maxContainers} 或几何/承压/载重限制）`
+      : `[${modeName}] 已用 ${best.containers.length} 柜装完 ${best.total} 箱，平均容积利用率 ${(volumeUtil * 100).toFixed(1)}%，载重利用率 ${(weightUtil * 100).toFixed(1)}%，理论体积上界 ${upperBound} 柜`
   };
 }
 
@@ -217,7 +246,7 @@ function rotLabel(it, sw, sd, sh) {
 
 // 浏览器 / Node 双端导出
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, packContainer, packAll };
+  module.exports = { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, orientations, packContainer, packAll };
 } else {
-  window.packer = { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, packContainer, packAll };
+  window.packer = { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, orientations, packContainer, packAll };
 }

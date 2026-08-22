@@ -10,7 +10,7 @@
   <header class="topbar">
     <div class="brand">
       <span class="logo">▣</span>
-      <h1>装柜大师 <small>ContainerLoader v1.0</small></h1>
+      <h1>装柜大师 <small>ContainerLoader v1.1</small></h1>
     </div>
     <div class="actions">
       <button id="btn-new" class="btn">新建方案</button>
@@ -33,6 +33,8 @@
         <h2>箱型规格</h2>
         <div id="box-list" class="card-list"></div>
         <button id="btn-add-box" class="btn small full">+ 新增箱型</button>
+        <button id="btn-import-csv" class="btn small full">📥 导入 CSV 箱型</button>
+        <div class="csv-hint">CSV 格式：名称,长,宽,高,重量,最大堆叠,颜色,可旋转</div>
       </section>
       <section class="panel-section">
         <h2>货柜规格</h2>
@@ -74,6 +76,15 @@
           <span class="auto-title">⚡ 自动装载</span>
           <span id="auto-status" class="auto-status"></span>
           <button id="btn-auto-run" class="btn small primary">一键装载</button>
+        </div>
+        <div class="auto-opts">
+          <label class="opt"><input type="checkbox" id="auto-rotate" checked> 允许箱子旋转90°</label>
+          <label class="opt">模式
+            <select id="auto-mode">
+              <option value="volume" selected>体积优先</option>
+              <option value="weight">重量优先</option>
+            </select>
+          </label>
         </div>
         <div id="auto-boxes" class="auto-boxes"></div>
       </div>
@@ -151,6 +162,7 @@
 
   <script src="lib/three.min.js"></script>
   <script src="js/packer.js"></script>
+  <script src="js/csv.js"></script>
   <script src="js/scene3d.js"></script>
   <script src="js/export.js"></script>
   <script src="js/app.js"></script>
