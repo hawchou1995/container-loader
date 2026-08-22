@@ -1,6 +1,6 @@
 {
   "name": "container-loader",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "3D 装柜计算软件：多箱型混装、自动装载优化、PDF/Excel/HTML/PNG 报告导出",
   "main": "electron/main.js",
   "scripts": {
@@ -22,7 +22,7 @@
   },
   "build": {
     "appId": "com.hawchou.container-loader",
-    "productName": "ContainerLoader",
+    "productName": "装柜大师",
     "artifactName": "container-loader-${version}-${arch}.${ext}",
     "directories": {
       "output": "dist"
@@ -43,7 +43,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "装柜大师 ContainerLoader"
+      "shortcutName": "装柜大师"
     }
   }
 }

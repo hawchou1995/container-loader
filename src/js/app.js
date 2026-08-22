@@ -7,6 +7,8 @@ window.state = {
   containers: [],   // 柜型库 [{id,name,L,W,H,maxWeight}]
   cabinets: [],     // 方案柜实例 [{container, boxes:[{id,boxId,boxName,x,y,z,dx,dy,dz,weight,color,stack,rotLabel}]}]
   currentCab: 0,
+  currentContainerId: null,  // 当前选中的装载柜型 id（一键装载/添加货柜使用）
+  loadQty: {},      // 装载清单数量 {boxId: n}（卡片徽章与自动装载面板双向同步）
   planName: '未命名方案'
 };
 
@@ -41,6 +43,7 @@ async function boot() {
     id: 'b' + (i + 1), ...b, rotatable: true
   }));
   window.state.containers = savedCons && savedCons.length ? savedCons : packer.DEFAULT_CONTAINERS.map(c => ({ ...c }));
+  window.state.currentContainerId = (window.state.containers[0] || {}).id || null;
 
   // 3D 场景
   window.scene = new Scene3D($('#scene-container'));
@@ -67,8 +70,13 @@ function syncFromScene() {
 
 /* ---------------- 方案 ---------------- */
 
+function currentContainer() {
+  return window.state.containers.find(c => c.id === window.state.currentContainerId) || window.state.containers[0] || null;
+}
+
 function newPlan() {
-  window.state.cabinets = [{ container: { ...window.state.containers[0] }, boxes: [] }];
+  const cont = currentContainer() || { name: '默认柜', L: 12032, W: 2352, H: 2690, maxWeight: 26700 };
+  window.state.cabinets = [{ container: { ...cont }, boxes: [] }];
   window.state.currentCab = 0;
   window.state.planName = '未命名方案';
   refreshAll();
@@ -137,54 +145,121 @@ function refreshStats() {
 
 /* ---------------- 箱型库 ---------------- */
 
+/* 装载清单数量：卡片徽章 + 自动装载面板输入框统一从这里读写 */
+function setLoadQty(id, n) {
+  window.state.loadQty[id] = Math.max(0, Math.floor(n) || 0);
+  renderBoxList();
+  renderAutoBoxes();
+}
+function stepBoxQty(id, delta) {
+  setLoadQty(id, (window.state.loadQty[id] || 0) + delta);
+}
+
 function renderBoxList() {
   const el = $('#box-list');
   el.innerHTML = window.state.boxes.map(b => `
-    <div class="card" data-id="${b.id}">
+    <div class="card" data-id="${b.id}" title="点击加箱 1 个">
       <span class="color-dot" style="background:${b.color}"></span>
       <span class="card-title">${esc(b.name)}</span>
       <div class="card-sub">${b.L}×${b.W}×${b.H}mm · ${b.weight}kg${b.rotatable ? '' : ' · 禁旋转'}</div>
+      <div class="card-qty">
+        <button data-op="minus-box" title="减 1 箱">−</button>
+        <span class="qty-badge ${(window.state.loadQty[b.id] || 0) ? '' : 'zero'}" data-qty="${b.id}">${window.state.loadQty[b.id] || 0}</span>
+        <button data-op="plus-box" title="加 1 箱">＋</button>
+      </div>
       <div class="card-ops">
         <button data-op="edit-box" title="编辑">✎</button>
         <button data-op="del-box" title="删除">🗑</button>
       </div>
     </div>`).join('');
+  el.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return; // 按钮各自处理，不触发加箱
+      stepBoxQty(card.dataset.id, +1);
+      toast(`已加入 1 个「${window.state.boxes.find(b => b.id === card.dataset.id)?.name || ''}」，合计 ${window.state.loadQty[card.dataset.id] || 0} 个`);
+    });
+  });
   el.querySelectorAll('[data-op]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = btn.closest('.card').dataset.id;
-      if (btn.dataset.op === 'edit-box') openBoxModal(id);
-      else if (btn.dataset.op === 'del-box') delBox(id);
+      const op = btn.dataset.op;
+      if (op === 'edit-box') openBoxModal(id);
+      else if (op === 'del-box') delBox(id);
+      else if (op === 'plus-box') stepBoxQty(id, 1);
+      else if (op === 'minus-box') stepBoxQty(id, -1);
     });
   });
   renderAutoBoxes();
 }
 
 function renderAutoBoxes() {
-  // 保留用户已填数量（自动装载后的 refreshAll 会重建列表，不清空输入）
-  const cur = {};
-  document.querySelectorAll('#auto-boxes input[data-boxid]').forEach(i => { cur[i.dataset.boxid] = i.value; });
+  // 数量以 state.loadQty 为准（卡片步进与输入框双向同步）
   const ab = $('#auto-boxes');
   ab.innerHTML = window.state.boxes.map(b => `
     <div class="ab-row">
       <span class="color-dot" style="background:${b.color}"></span>
       <label title="${esc(b.name)}">${esc(b.name)}</label>
-      <input type="number" min="0" value="${cur[b.id] != null ? cur[b.id] : 0}" data-boxid="${b.id}">
+      <input type="number" min="0" value="${window.state.loadQty[b.id] || 0}" data-boxid="${b.id}">
       <span class="unit">箱</span>
     </div>`).join('');
+  ab.querySelectorAll('input[data-boxid]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const id = inp.dataset.boxid;
+      window.state.loadQty[id] = Math.max(0, Math.floor(+inp.value) || 0);
+      // 同步卡片徽章（不重建输入框，避免打断输入）
+      document.querySelectorAll(`[data-qty="${id}"]`).forEach(badge => {
+        badge.textContent = window.state.loadQty[id];
+        badge.classList.toggle('zero', !window.state.loadQty[id]);
+      });
+    });
+  });
+}
+
+function currentContainerName() {
+  const c = currentContainer();
+  return c ? c.name : '无';
+}
+
+/* 选中柜型为当前装载柜：切换当前柜子的柜型（有货时先确认清空） */
+function selectContainer(id) {
+  const c = window.state.containers.find(x => x.id === id);
+  if (!c) return;
+  window.state.currentContainerId = id;
+  const cab = window.state.cabinets[window.state.currentCab];
+  if (cab && cab.boxes.length) {
+    if (!confirm(`更换为「${c.name}」将清空当前柜已装的 ${cab.boxes.length} 箱，继续？`)) {
+      renderContainerList();
+      return;
+    }
+    cab.boxes = [];
+  }
+  if (cab) cab.container = { ...c };
+  refreshAll();
+  toast(`当前柜已设为「${c.name}」`);
 }
 
 function renderContainerList() {
   const el = $('#container-list');
-  el.innerHTML = window.state.containers.map(c => `
-    <div class="card" data-id="${c.id}">
+  el.innerHTML = window.state.containers.map(c => {
+    const active = c.id === window.state.currentContainerId;
+    return `
+    <div class="card ${active ? 'active' : ''}" data-id="${c.id}" title="${active ? '当前装载柜' : '点击设为当前装载柜'}">
       <span class="card-title">${esc(c.name)}</span>
       <div class="card-sub">${c.L}×${c.W}×${c.H}mm · 载重${c.maxWeight}kg</div>
+      ${active ? '<div class="card-check">✓ 当前柜</div>' : ''}
       <div class="card-ops">
         <button data-op="edit-container" title="编辑">✎</button>
         <button data-op="del-container" title="删除">🗑</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      selectContainer(card.dataset.id);
+    });
+  });
   el.querySelectorAll('[data-op]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -193,6 +268,7 @@ function renderContainerList() {
       else if (btn.dataset.op === 'del-container') delContainer(id);
     });
   });
+  $('#menubar-status').textContent = `当前柜：${currentContainerName()}`;
 }
 
 function saveLibraries() {
@@ -207,6 +283,9 @@ function delBox(id) {
 
 function delContainer(id) {
   window.state.containers = window.state.containers.filter(c => c.id !== id);
+  if (window.state.currentContainerId === id) {
+    window.state.currentContainerId = (window.state.containers[0] || {}).id || null;
+  }
   saveLibraries(); renderContainerList(); toast('柜型已删除');
 }
 
@@ -247,7 +326,9 @@ function closeModals() {
 /* ---------------- 操作 ---------------- */
 
 function addCabinet() {
-  window.state.cabinets.push({ container: { ...window.state.containers[0] }, boxes: [] });
+  const cont = currentContainer();
+  if (!cont) { toast('请先配置柜型', 'err'); return; }
+  window.state.cabinets.push({ container: { ...cont }, boxes: [] });
   window.state.currentCab = window.state.cabinets.length - 1;
   refreshAll();
   toast('已添加货柜');
@@ -289,13 +370,14 @@ function autoLoad() {
     if (n > 0) { counts[i.dataset.boxid] = n; total += n; }
   });
   if (!total) { toast('请先在下方面板填写各箱型数量', 'err'); return; }
-  if (!window.state.containers.length) { toast('请先配置柜型', 'err'); return; }
+  const cont = currentContainer();
+  if (!cont) { toast('请先配置柜型', 'err'); return; }
 
   const boxTypes = window.state.boxes.map(b => ({
     id: b.id, name: b.name, L: b.L, W: b.W, H: b.H,
     weight: b.weight, color: b.color, maxStack: (b.max || b.maxStack || 8), rotatable: b.rotatable !== false
   }));
-  const container = { ...window.state.containers[0] };
+  const container = { ...cont };
   const allowRotate = $('#auto-rotate').checked;
   const mode = $('#auto-mode').value;
 
@@ -395,6 +477,9 @@ async function openPlan() {
     window.state.cabinets = plan.cabinets && plan.cabinets.length ? plan.cabinets : [{ container: { ...window.state.containers[0] }, boxes: [] }];
     window.state.planName = plan.name || '未命名方案';
     window.state.currentCab = 0;
+    if (!window.state.containers.find(c => c.id === window.state.currentContainerId)) {
+      window.state.currentContainerId = (window.state.containers[0] || {}).id || null;
+    }
     saveLibraries();
     refreshAll();
     toast('方案已打开：' + plan.name, 'ok');
@@ -428,6 +513,49 @@ async function doExport(kind) {
 
 /* ---------------- 事件绑定 ---------------- */
 
+function toggleLock() {
+  window.scene.locked = !window.scene.locked;
+  $('#btn-lock').textContent = window.scene.locked ? '🔒 锁定' : '🔓 解锁';
+  $('#btn-lock').classList.toggle('toggle-on', window.scene.locked);
+}
+
+function bindMenus() {
+  const act = {
+    'new-scheme': () => { if (confirm('新建方案将清空当前方案，继续？')) newPlan(); },
+    'open-scheme': openPlan,
+    'save-scheme': savePlan,
+    'import-csv': importBoxesCSV,
+    'open-data-dir': async () => {
+      const d = await window.clAPI.dataDir();
+      window.clAPI.showItem(d);
+    },
+    'quit': () => { window.close(); },
+    'add-box': () => openBoxModal(null),
+    'add-container': () => openContainerModal(null),
+    'toggle-lock': toggleLock,
+    'toggle-hint': () => {
+      const h = $('#scene-hint');
+      h.style.display = h.style.display === 'none' ? '' : 'none';
+    },
+    'auto-run': autoLoad,
+    'toggle-rotate': () => {
+      const chk = $('#auto-rotate');
+      chk.checked = !chk.checked;
+      toast(chk.checked ? '已允许箱子旋转 90°' : '已禁止箱子旋转');
+    },
+    'mode-volume': () => { $('#auto-mode').value = 'volume'; toast('装载模式：体积优先'); },
+    'mode-weight': () => { $('#auto-mode').value = 'weight'; toast('装载模式：重量优先'); },
+    'show-hint': () => toast('点箱型卡片加箱，点柜型卡片选柜；锁定状态拖箱子，Q/E 旋转，Delete 删除，双击空白切视角'),
+    'about': () => { $('#modal-about').classList.remove('hidden'); }
+  };
+  document.querySelectorAll('[data-act]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const fn = act[btn.dataset.act];
+      if (fn) fn();
+    });
+  });
+}
+
 function bindUI() {
   $('#btn-new').addEventListener('click', () => { if (confirm('新建方案将清空当前方案，继续？')) newPlan(); });
   $('#btn-open').addEventListener('click', openPlan);
@@ -454,11 +582,7 @@ function bindUI() {
     });
   });
   $('#btn-dup-layer').addEventListener('click', dupLayer);
-  $('#btn-lock').addEventListener('click', () => {
-    window.scene.locked = !window.scene.locked;
-    $('#btn-lock').textContent = window.scene.locked ? '🔒 锁定' : '🔓 解锁';
-    $('#btn-lock').classList.toggle('toggle-on', window.scene.locked);
-  });
+  $('#btn-lock').addEventListener('click', toggleLock);
   $('#snap-select').addEventListener('change', (e) => { window.scene.snap = +e.target.value; });
 
   $('#btn-auto-run').addEventListener('click', autoLoad);
@@ -502,10 +626,13 @@ function bindUI() {
     }
     saveLibraries(); renderContainerList(); closeModals(); toast('柜型已保存', 'ok');
   });
+  $('#about-ok').addEventListener('click', () => $('#modal-about').classList.add('hidden'));
 
   document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', (e) => {
     if (e.target === m) m.classList.add('hidden');
   }));
+
+  bindMenus();
 }
 
 window.addEventListener('DOMContentLoaded', () => {

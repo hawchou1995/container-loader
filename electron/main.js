@@ -32,7 +32,7 @@ function createWindow() {
     height: 900,
     minWidth: 1100,
     minHeight: 700,
-    title: '装柜大师 ContainerLoader',
+    title: '装柜大师 v1.2.0',
     backgroundColor: '#f4f6fa',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -57,17 +57,25 @@ function createWindow() {
           const snap = await mainWindow.webContents.executeJavaScript(
             `JSON.stringify({ready: document.readyState, boot: window.__APP_BOOTED__||false, err: window.__APP_ERROR__||null})`
           );
-          console.log('[SMOKE] boot=' + snap);
+            console.log('[SMOKE] boot=' + snap);
           // 自动执行一次装柜（b1×80, b2×40, b3×10）验证算法+UI 集成
           const loadResult = await mainWindow.webContents.executeJavaScript(`(async () => {
             const inp = [...document.querySelectorAll('#auto-boxes input[data-boxid]')];
-            const setV = (id, n) => { const i = inp.find(x => x.dataset.boxid === id); if (i) i.value = n; };
+            const setV = (id, n) => { const i = inp.find(x => x.dataset.boxid === id); if (i) i.value = n; i.dispatchEvent(new Event('input', {bubbles:true})); };
             setV('b1', 80); setV('b2', 40); setV('b3', 10);
             const ui = {
               rotateChk: !!document.querySelector('#auto-rotate'),
               modeSel: !!document.querySelector('#auto-mode'),
               importBtn: !!document.querySelector('#btn-import-csv'),
-              csvScript: typeof window.csvImporter !== 'undefined'
+              csvScript: typeof window.csvImporter !== 'undefined',
+              menubar: document.querySelectorAll('#menus .menu').length,
+              menubarText: [...document.querySelectorAll('#menus .menu-btn')].map(b=>b.textContent).join(','),
+              brandNoEn: !/ContainerLoader/i.test(document.querySelector('.brand').textContent),
+              bodyEnLeft: /ContainerLoader|Auto-?load|One-?click/i.test(document.body.innerText),
+              boxCardStep: (() => { const c = document.querySelector('#box-list .card'); if(!c) return 'no-card'; c.click(); return window.state.loadQty[c.dataset.id]; })(),
+              boxBadge: document.querySelector('[data-qty="b1"]')?.textContent || 'no-badge',
+              contSelect: (() => { const cs=[...document.querySelectorAll('#container-list .card')]; if(cs.length<2) return 'only-'+cs.length; cs[1].click(); return window.state.currentContainerId + '|' + (document.querySelector('#container-list .card.active')?.dataset.id || 'no-active'); })(),
+              aboutModal: (() => { const b=[...document.querySelectorAll('[data-act="about"]')][0]; b.click(); return !document.querySelector('#modal-about').classList.contains('hidden'); })()
             };
             document.querySelector('#btn-auto-run').click();
             await new Promise(r => setTimeout(r, 400));

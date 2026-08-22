@@ -3,41 +3,101 @@
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; script-src 'self'">
-  <title>装柜大师 ContainerLoader</title>
+  <title>装柜大师 v1.2.0</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <header class="topbar">
+  <!-- 顶部菜单栏（第一行） -->
+  <header class="menubar">
     <div class="brand">
       <span class="logo">▣</span>
-      <h1>装柜大师 <small>ContainerLoader v1.1</small></h1>
+      <h1>装柜大师 <small>v1.2.0</small></h1>
     </div>
-    <div class="actions">
-      <button id="btn-new" class="btn">新建方案</button>
-      <button id="btn-open" class="btn">打开方案</button>
-      <button id="btn-save" class="btn primary">保存方案</button>
-      <span class="sep"></span>
-      <button id="btn-export-pdf" class="btn">📄 PDF报告</button>
-      <button id="btn-export-png" class="btn">📷 截图</button>
-      <button id="btn-export-excel" class="btn">📊 Excel明细</button>
-      <button id="btn-export-html" class="btn">🌐 HTML报告</button>
-      <span class="sep"></span>
-      <a href="#" id="btn-data-dir" class="btn subtle" title="打开数据目录">🗂 数据目录</a>
-    </div>
+    <nav class="menus" id="menus">
+      <div class="menu">
+        <button class="menu-btn">文件</button>
+        <div class="menu-drop">
+          <button data-act="new-scheme">新建方案</button>
+          <button data-act="open-scheme">打开方案</button>
+          <button data-act="save-scheme">保存方案</button>
+          <div class="menu-sep"></div>
+          <button data-act="import-csv">导入 CSV 箱型</button>
+          <div class="menu-sep"></div>
+          <button data-act="open-data-dir">打开数据目录</button>
+          <div class="menu-sep"></div>
+          <button data-act="quit">退出</button>
+        </div>
+      </div>
+      <div class="menu">
+        <button class="menu-btn">编辑</button>
+        <div class="menu-drop">
+          <button data-act="add-box">新增箱型</button>
+          <button data-act="add-container">新增柜型</button>
+        </div>
+      </div>
+      <div class="menu">
+        <button class="menu-btn">视图</button>
+        <div class="menu-drop">
+          <button data-view="front">前视</button>
+          <button data-view="back">后视</button>
+          <button data-view="left">左视</button>
+          <button data-view="right">右视</button>
+          <button data-view="top">顶视</button>
+          <button data-view="iso">立体</button>
+          <div class="menu-sep"></div>
+          <button data-act="toggle-lock">锁定 / 解锁拖拽</button>
+          <button data-act="toggle-hint">显示 / 隐藏操作提示</button>
+        </div>
+      </div>
+      <div class="menu">
+        <button class="menu-btn">装载</button>
+        <div class="menu-drop">
+          <button data-act="auto-run">一键装载</button>
+          <div class="menu-sep"></div>
+          <button data-act="toggle-rotate">允许箱子旋转 90°</button>
+          <button data-act="mode-volume">装载模式：体积优先</button>
+          <button data-act="mode-weight">装载模式：重量优先</button>
+        </div>
+      </div>
+      <div class="menu">
+        <button class="menu-btn">帮助</button>
+        <div class="menu-drop">
+          <button data-act="show-hint">操作说明</button>
+          <button data-act="about">关于</button>
+        </div>
+      </div>
+    </nav>
+    <span id="menubar-status" class="menubar-status"></span>
+  </header>
+
+  <!-- 快捷工具栏（第二行） -->
+  <div class="toolbar">
+    <button id="btn-new" class="btn">新建方案</button>
+    <button id="btn-open" class="btn">打开方案</button>
+    <button id="btn-save" class="btn primary">保存方案</button>
+    <span class="sep"></span>
+    <button id="btn-export-pdf" class="btn">📄 PDF 报告</button>
+    <button id="btn-export-png" class="btn">📷 截图</button>
+    <button id="btn-export-excel" class="btn">📊 Excel 明细</button>
+    <button id="btn-export-html" class="btn">🌐 HTML 报告</button>
+    <span class="sep"></span>
+    <a href="#" id="btn-data-dir" class="btn subtle" title="打开数据目录">🗂 数据目录</a>
+    <span class="sep"></span>
+    <span class="toolbar-hint">点箱型卡片加箱，点柜型卡片选柜</span>
   </div>
 
   <div class="main">
-    <!-- 左栏：箱型 / 柜型 -->
+    <!-- 左栏：箱型 / 柜型库 -->
     <aside class="left-panel">
       <section class="panel-section">
-        <h2>箱型规格</h2>
+        <h2>箱型库</h2>
         <div id="box-list" class="card-list"></div>
         <button id="btn-add-box" class="btn small full">+ 新增箱型</button>
         <button id="btn-import-csv" class="btn small full">📥 导入 CSV 箱型</button>
         <div class="csv-hint">CSV 格式：名称,长,宽,高,重量,最大堆叠,颜色,可旋转</div>
       </section>
       <section class="panel-section">
-        <h2>货柜规格</h2>
+        <h2>柜型库</h2>
         <div id="container-list" class="card-list"></div>
         <button id="btn-add-container" class="btn small full">+ 新增柜型</button>
       </section>
@@ -68,7 +128,7 @@
       </div>
       <div id="scene-container"></div>
       <div id="scene-hint">
-        <b>操作提示：</b>锁定状态拖箱子移动（自动吸附面）｜右键/滚轮旋转缩放视角｜点选箱子，Q/E 旋转90°｜Delete 删除｜双击空白处切换视角
+        <b>操作提示：</b>点击箱型卡片 = 加入装载 ＋1｜锁定状态拖箱子移动（自动吸附面）｜右键/滚轮旋转缩放视角｜点选箱子后 Q/E 旋转 90°，Delete 删除｜双击空白处切换视角
       </div>
       <!-- 自动装载面板 -->
       <div id="auto-panel">
@@ -153,6 +213,21 @@
       <div class="modal-actions">
         <button id="c-cancel" class="btn">取消</button>
         <button id="c-ok" class="btn primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 弹窗：关于 -->
+  <div id="modal-about" class="modal hidden">
+    <div class="modal-card">
+      <h3>关于装柜大师</h3>
+      <div class="about-body">
+        <p><b>装柜大师 v1.2.0</b></p>
+        <p>集装箱 / 货柜装柜模拟与优化工具：自动装载、3D 可视化、导出报告。</p>
+        <p class="muted">支持体积优先 / 重量优先装载；箱型与柜型可自由定义。</p>
+      </div>
+      <div class="modal-actions">
+        <button id="about-ok" class="btn primary">确定</button>
       </div>
     </div>
   </div>
