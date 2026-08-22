@@ -137,21 +137,31 @@ body {
 .card .card-ops button:hover { color: var(--danger); }
 .card .color-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: 1px; }
 
-/* 箱型卡片：数量步进 */
+/* 箱型卡片：数量步进 + 直接输入 + 满载测算 */
 .card-qty {
-  display: flex; align-items: center; gap: 6px; margin-top: 6px;
+  display: flex; align-items: center; gap: 4px; margin-top: 6px;
 }
 .card-qty button {
   border: 1px solid var(--border); background: #fff; border-radius: 4px;
-  width: 24px; height: 22px; cursor: pointer; font-size: 14px; line-height: 1;
+  width: 24px; height: 24px; cursor: pointer; font-size: 14px; line-height: 1;
   color: var(--text); font-family: inherit;
 }
 .card-qty button:hover { border-color: var(--primary); color: var(--primary); background: #f0f5ff; }
-.card-qty .qty-badge {
-  min-width: 26px; text-align: center; font-weight: 700; font-size: 13px;
-  color: var(--primary); background: #eaf1ff; border-radius: 10px; padding: 1px 6px;
+.card-qty .qty-badge-input {
+  width: 52px; text-align: center; font-weight: 700; font-size: 13px;
+  color: var(--primary); background: #eaf1ff; border: 1px solid var(--primary);
+  border-radius: 8px; padding: 2px 4px; outline: none; font-family: inherit;
 }
-.card-qty .qty-badge.zero { color: var(--muted); background: #f1f3f7; }
+.card-qty .qty-badge-input:focus { background: #fff; }
+.card-qty .qty-max {
+  margin-left: auto; width: 26px; border-color: #ffd500;
+  background: #fff8d6; color: #8a6d00; font-size: 13px;
+}
+.card-qty .qty-max:hover { border-color: #c9a400; color: #6b5400; background: #fff3b0; }
+
+/* 自动装载面板行内勾选 */
+.ab-row input.ab-sel { width: auto; margin: 0; cursor: pointer; accent-color: var(--primary); }
+.auto-foot { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
 
 /* 柜型卡片：当前柜标记 */
 .card-check {

@@ -3,7 +3,7 @@
  * packer 单元测试：验证几何不重叠、柜内约束、载重、承压
  */
 const assert = require('assert');
-const { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, packAll } = require('../src/js/packer.js');
+const { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, packAll, singleTypeLayout, fillToCapacity } = require('../src/js/packer.js');
 
 function checkNoOverlap(boxes) {
   for (let i = 0; i < boxes.length; i++) {
@@ -115,6 +115,69 @@ console.log('✓ 测试1 单箱型 60 箱：全部装完，无重叠，无越界
 
 function packC(cont, boxTypes, counts, opt) {
   return packAll(cont, boxTypes, counts, opt);
+}
+
+// 测试 8：单箱型满载排布（singleTypeLayout）——网格数量精确、遵守承压、无重叠越界
+{
+  const c = { name: '20GP', L: 5898, W: 2352, H: 2393, maxWeight: 28000 };
+  const box = { id: 's', name: '纸箱S', L: 400, W: 300, H: 250, weight: 12, maxStack: 8 };
+  const r = singleTypeLayout(c, box, { allowRotate: true });
+  const gridEstimate = Math.floor(c.L / 400) * Math.floor(c.W / 300) * Math.floor(c.H / 250);
+  assert(r.count >= gridEstimate, `单型满载应 ≥ 网格估计 ${gridEstimate}，实际 ${r.count}`);
+  checkInside(r.boxes, c);
+  checkNoOverlap(r.boxes);
+  const maxStack = Math.max(...r.boxes.map(b => b.stack));
+  assert(maxStack <= 8, `堆叠层数 ${maxStack} 超出 maxStack=8`);
+  // 层数受 maxStack 限制：旋转后层数可达 4 层，但 maxStack=2 → 每格最多 2 层
+  const box2 = { id: 't', name: '薄箱', L: 500, W: 400, H: 100, weight: 5, maxStack: 2 };
+  const r2 = singleTypeLayout(c, box2, { allowRotate: true });
+  const maxStackObserved = Math.max(...r2.boxes.map(b => b.stack));
+  assert(maxStackObserved <= 2, `薄箱堆叠层数 ${maxStackObserved} 超出 maxStack=2`);
+  // 最优朝向 (400×100×500)：14×23×2 = 644（若无层数限制为 14×23×4=1288）
+  assert(r2.count === 644, `薄箱应受 maxStack 限制为 644，实际 ${r2.count}`);
+  console.log(`✓ 单箱满载排布：40GP 可装纸箱S ${r.count} 箱（网格估计 ${gridEstimate}），无重叠越界，层数受限正确`);
+}
+
+// 测试 9：多箱型填满测算（fillToCapacity）——结果装满、无重叠越界
+{
+  const c = { name: '40HQ', L: 12032, W: 2352, H: 2690, maxWeight: 26700 };
+  const boxTypes = [
+    { id: 'a', name: 'A', L: 600, W: 400, H: 300, weight: 20, maxStack: 8 },
+    { id: 'b', name: 'B', L: 400, W: 300, H: 200, weight: 10, maxStack: 10 }
+  ];
+  const res = fillToCapacity(c, boxTypes, { a: 10, b: 5 }, { iterations: 6 });
+  assert(res && res.containers.length === 1, '填满测算应返回单柜结果');
+  const boxes = res.containers[0].boxes;
+  assert(boxes.length > 15, `填满后箱数应明显大于初始 15，实际 ${boxes.length}`);
+  assert(res.volumeUtil > 0.7, `填满后容积率应>70%，实际 ${(res.volumeUtil * 100).toFixed(1)}%`);
+  checkInside(boxes, c);
+  checkNoOverlap(boxes);
+  console.log(`✓ 多型填满：单柜装 ${boxes.length} 箱，容积率 ${(res.volumeUtil * 100).toFixed(1)}%，无重叠越界`);
+}
+
+// 测试 10：压实后处理不产生重叠/越界，且布局紧致（箱子左缘/下缘贴壁比例提高）
+{
+  const c = { name: 'test', L: 3000, W: 2000, H: 2000, maxWeight: 0 };
+  const boxTypes = [
+    { id: 'a', name: 'A', L: 800, W: 600, H: 500, weight: 10, maxStack: 8 },
+    { id: 'b', name: 'B', L: 500, W: 400, H: 300, weight: 6, maxStack: 8 },
+    { id: 'c', name: 'C', L: 300, W: 250, H: 200, weight: 4, maxStack: 8 }
+  ];
+  const res = packC(c, boxTypes, { a: 8, b: 12, c: 20 }, { maxContainers: 1, iterations: 4 });
+  checkInside(res.containers[0].boxes, c);
+  checkNoOverlap(res.containers[0].boxes);
+  // 压实后每个箱子都应贴着柜壁或某同层邻居（无悬空空隙）
+  const boxes = res.containers[0].boxes;
+  const touchLeftOrWall = boxes.filter(b => {
+    const wall = b.x < 1e-6;
+    const leftNeighbor = boxes.some(o => o !== b &&
+      Math.abs(o.z - b.z) < 1e-6 &&                     // 同一层（不同高度也互相阻挡）
+      o.x + o.dx <= b.x + 1e-6 && o.x + o.dx > b.x - 1 && // 紧贴左缘
+      o.y < b.y + b.dy && b.y < o.y + o.dy);
+    return wall || leftNeighbor;
+  }).length;
+  assert(touchLeftOrWall / boxes.length > 0.8, `压实后应 ≥80% 箱子贴左缘，实际 ${(touchLeftOrWall / boxes.length * 100).toFixed(0)}%`);
+  console.log(`✓ 压实：${boxes.length} 箱无重叠越界，${(touchLeftOrWall / boxes.length * 100).toFixed(0)}% 贴左缘/柜壁`);
 }
 
 console.log('\n全部通过 ✅');

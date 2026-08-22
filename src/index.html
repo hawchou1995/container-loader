@@ -138,15 +138,17 @@
           <button id="btn-auto-run" class="btn small primary">一键装载</button>
         </div>
         <div class="auto-opts">
-          <label class="opt"><input type="checkbox" id="auto-rotate" checked> 允许箱子旋转90°</label>
+          <label class="opt"><input type="checkbox" id="auto-rotate" checked> 允许旋转90°</label>
           <label class="opt">模式
             <select id="auto-mode">
               <option value="volume" selected>体积优先</option>
               <option value="weight">重量优先</option>
             </select>
           </label>
+          <button id="btn-fill-remain" class="btn tiny" title="按勾选箱型把当前柜填满到装不下">🧱 填满剩余</button>
         </div>
-        <div id="auto-boxes" class="auto-boxes"></div>
+        <div class="auto-boxes" id="auto-boxes"></div>
+        <div class="auto-foot">☑ 勾选参与装载的箱型，取消勾选则忽略</div>
       </div>
     </main>
 

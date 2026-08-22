@@ -137,7 +137,122 @@ function packContainer(container, items, { allowRotate = true } = {}) {
   }
 
   const usedVolume = placed.reduce((s, p) => s + p.dx * p.dy * p.dz, 0);
+  // 水平压实：同层箱子向 -x/-y 贴紧，消除 guillotine 分割残留的空隙视觉（不改变 z/承压）
+  compactLayout(container, placed);
   return { container, boxes: placed, usedVolume, usedWeight, remaining };
+}
+
+/**
+ * 水平压实：每个箱子在其 z 平面内尽量向 -x、-y 滑移，直到被同层邻居或柜壁挡住。
+ * 只改 x/y 坐标，不改 z 与尺寸，因此不破坏承压/堆叠约束，也不产生重叠。
+ */
+function compactLayout(container, boxes) {
+  const overlapZ = (a, b) => (a.z < b.z + b.dz && b.z < a.z + a.dz);
+  let guard = 0;
+  let moved = true;
+  while (moved && guard++ < 12) {
+    moved = false;
+    // 先向 -x 压实
+    const byX = boxes.slice().sort((a, b) => a.x - b.x);
+    for (const b of byX) {
+      let free = b.x;
+      for (const o of boxes) {
+        if (o === b) continue;
+        if (!overlapZ(o, b)) continue;              // z 不相交不阻挡
+        if (!(o.y < b.y + b.dy && b.y < o.y + o.dy)) continue; // y 不相交不阻挡
+        if (o.x + o.dx <= b.x + 1e-6) free = Math.min(free, b.x - (o.x + o.dx));
+      }
+      if (free > 1e-6) { b.x -= free; moved = true; }
+    }
+    // 再向 -y 滑
+    const sortedY = boxes.slice().sort((a, b) => a.y - b.y);
+    for (const b of sortedY) {
+      let free = b.y;
+      for (const o of boxes) {
+        if (o === b) continue;
+        if (!overlapZ(o, b)) continue;
+        if (!(o.x < b.x + b.dx && b.x < o.x + o.dx)) continue; // x 不相交不阻挡
+        if (o.y + o.dy <= b.y + 1e-6) free = Math.min(free, b.y - (o.y + o.dy));
+      }
+      if (free > 1e-6) { b.y -= free; moved = true; }
+    }
+  }
+  return boxes;
+}
+
+/**
+ * 单箱型满载排布：对单一箱型用「各旋转取 floor 网格数最大」的精确排布，
+ * 直接生成贴满柜子的网格布局（同一箱型轴对齐装箱的最优解），并遵守最大堆叠层数。
+ * @returns {count, boxes} boxes 含 x/y/z/dx/dy/dz/weight/color/stack 的紧凑布局
+ */
+function singleTypeLayout(container, box, { allowRotate = true } = {}) {
+  // 归一化箱型字段：兼容 {L,W,H} 与 {dx,dy,dz} 两种命名
+  const dim = {
+    dx: box.dx || box.L, dy: box.dy || box.W, dz: box.dz || box.H,
+    rotatable: box.rotatable !== false
+  };
+  const perms = orientations(dim, allowRotate);
+  let best = null;
+  for (const [sw, sd, sh] of perms) {
+    const nx = Math.floor(container.L / sw);
+    const ny = Math.floor(container.W / sd);
+    const maxLayers = Math.min(Math.floor(container.H / sh), Math.max(1, box.maxStack || box.max || 8));
+    const count = nx * ny * maxLayers;
+    if (!best || count > best.count) {
+      best = { count, nx, ny, maxLayers, sw, sd, sh };
+    }
+  }
+  if (!best || best.count === 0) return { count: 0, boxes: [] };
+  const { nx, ny, maxLayers, sw, sd, sh } = best;
+  const boxes = [];
+  for (let k = 0; k < maxLayers; k++) {
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        boxes.push({
+          id: box.id, boxId: box.id, boxName: box.name,
+          x: i * sw, y: j * sd, z: k * sh,
+          dx: sw, dy: sd, dz: sh,
+          weight: box.weight, color: box.color, stack: k + 1,
+          rotLabel: rotLabel(dim, sw, sd, sh)
+        });
+      }
+    }
+  }
+  return { count: boxes.length, boxes };
+}
+
+/**
+ * 多箱型填满测算：把给定箱型数量放大到「总件数上限」后单柜装载，
+ * 逼近该柜在给定箱型组合下的最大装载量。用于「一键填满剩余空间」。
+ */
+function fillToCapacity(container, boxTypes, counts, opts = {}) {
+  const cap = opts.itemCap ?? 3000;
+  const fillCounts = {};
+  let sum = 0;
+  for (const [id, n] of Object.entries(counts || {})) {
+    const v = Math.max(1, Math.ceil(n || 0));
+    fillCounts[id] = v; sum += v;
+  }
+  if (!Object.keys(fillCounts).length) return null;
+  // 放大到总量逼近 cap（等比），确保能灌满；原数量已超 cap 则不再放大
+  if (sum < cap) {
+    const k = cap / sum;
+    let total = 0;
+    for (const id of Object.keys(fillCounts)) {
+      fillCounts[id] = Math.max(1, Math.floor(fillCounts[id] * k));
+      total += fillCounts[id];
+    }
+    if (total > cap) { // 取整超限则整体收缩
+      const k2 = cap / total;
+      for (const id of Object.keys(fillCounts)) fillCounts[id] = Math.max(1, Math.floor(fillCounts[id] * k2));
+    }
+  }
+  return packAll(container, boxTypes, fillCounts, {
+    maxContainers: 1,
+    iterations: opts.iterations ?? 6,
+    allowRotate: opts.allowRotate !== false,
+    mode: opts.mode || 'volume'
+  });
 }
 
 /**
@@ -246,7 +361,7 @@ function rotLabel(it, sw, sd, sh) {
 
 // 浏览器 / Node 双端导出
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, orientations, packContainer, packAll };
+  module.exports = { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, orientations, packContainer, packAll, compactLayout, singleTypeLayout, fillToCapacity };
 } else {
-  window.packer = { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, orientations, packContainer, packAll };
+  window.packer = { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, orientations, packContainer, packAll, compactLayout, singleTypeLayout, fillToCapacity };
 }

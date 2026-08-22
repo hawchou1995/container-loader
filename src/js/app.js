@@ -8,7 +8,8 @@ window.state = {
   cabinets: [],     // 方案柜实例 [{container, boxes:[{id,boxId,boxName,x,y,z,dx,dy,dz,weight,color,stack,rotLabel}]}]
   currentCab: 0,
   currentContainerId: null,  // 当前选中的装载柜型 id（一键装载/添加货柜使用）
-  loadQty: {},      // 装载清单数量 {boxId: n}（卡片徽章与自动装载面板双向同步）
+  loadQty: {},      // 装载清单数量 {boxId: n}（卡片输入框与装载面板双向同步）
+  loadSel: {},      // 装载勾选 {boxId: true|false}（false=忽略该箱型，缺省=参与）
   planName: '未命名方案'
 };
 
@@ -145,14 +146,26 @@ function refreshStats() {
 
 /* ---------------- 箱型库 ---------------- */
 
-/* 装载清单数量：卡片徽章 + 自动装载面板输入框统一从这里读写 */
+/* 装载清单数量：卡片输入框 + 自动装载面板输入框统一从这里读写 */
 function setLoadQty(id, n) {
   window.state.loadQty[id] = Math.max(0, Math.floor(n) || 0);
-  renderBoxList();
-  renderAutoBoxes();
+  syncQtyUI(id);
 }
 function stepBoxQty(id, delta) {
   setLoadQty(id, (window.state.loadQty[id] || 0) + delta);
+}
+/* 同步某箱型的数量到所有显示位（卡片输入框 + 装载面板输入框） */
+function syncQtyUI(id) {
+  document.querySelectorAll(`[data-qty="${id}"]`).forEach(el => {
+    if (el.tagName === 'INPUT' && document.activeElement !== el) el.value = window.state.loadQty[id] || 0;
+    else if (el.tagName !== 'INPUT') el.textContent = window.state.loadQty[id] || 0;
+  });
+  document.querySelectorAll(`#auto-boxes input[data-boxid="${id}"]`).forEach(el => {
+    if (document.activeElement !== el) el.value = window.state.loadQty[id] || 0;
+  });
+}
+function boxSelected(id) {
+  return window.state.loadSel[id] !== false;
 }
 
 function renderBoxList() {
@@ -164,8 +177,9 @@ function renderBoxList() {
       <div class="card-sub">${b.L}×${b.W}×${b.H}mm · ${b.weight}kg${b.rotatable ? '' : ' · 禁旋转'}</div>
       <div class="card-qty">
         <button data-op="minus-box" title="减 1 箱">−</button>
-        <span class="qty-badge ${(window.state.loadQty[b.id] || 0) ? '' : 'zero'}" data-qty="${b.id}">${window.state.loadQty[b.id] || 0}</span>
+        <input type="number" min="0" class="qty-badge-input" data-qty="${b.id}" value="${window.state.loadQty[b.id] || 0}" title="直接输入数量，回车生效">
         <button data-op="plus-box" title="加 1 箱">＋</button>
+        <button data-op="max-box" class="qty-max" title="满载测算：当前柜最多能装多少个这种箱并直接模拟">⚡</button>
       </div>
       <div class="card-ops">
         <button data-op="edit-box" title="编辑">✎</button>
@@ -174,9 +188,21 @@ function renderBoxList() {
     </div>`).join('');
   el.querySelectorAll('.card').forEach(card => {
     card.addEventListener('click', (e) => {
-      if (e.target.closest('button')) return; // 按钮各自处理，不触发加箱
+      if (e.target.closest('button') || e.target.closest('input')) return; // 按钮/输入框各自处理
       stepBoxQty(card.dataset.id, +1);
       toast(`已加入 1 个「${window.state.boxes.find(b => b.id === card.dataset.id)?.name || ''}」，合计 ${window.state.loadQty[card.dataset.id] || 0} 个`);
+    });
+  });
+  el.querySelectorAll('input[data-qty]').forEach(inp => {
+    inp.addEventListener('click', (e) => e.stopPropagation());
+    inp.addEventListener('input', () => {
+      window.state.loadQty[inp.dataset.qty] = Math.max(0, Math.floor(+inp.value) || 0);
+      syncQtyUI(inp.dataset.qty);
+    });
+    inp.addEventListener('change', () => {
+      window.state.loadQty[inp.dataset.qty] = Math.max(0, Math.floor(+inp.value) || 0);
+      syncQtyUI(inp.dataset.qty);
+      toast(`「${window.state.boxes.find(b => b.id === inp.dataset.qty)?.name || ''}」数量已设为 ${window.state.loadQty[inp.dataset.qty] || 0}`);
     });
   });
   el.querySelectorAll('[data-op]').forEach(btn => {
@@ -188,30 +214,37 @@ function renderBoxList() {
       else if (op === 'del-box') delBox(id);
       else if (op === 'plus-box') stepBoxQty(id, 1);
       else if (op === 'minus-box') stepBoxQty(id, -1);
+      else if (op === 'max-box') singleBoxMax(id);
     });
   });
   renderAutoBoxes();
 }
 
 function renderAutoBoxes() {
-  // 数量以 state.loadQty 为准（卡片步进与输入框双向同步）
   const ab = $('#auto-boxes');
   ab.innerHTML = window.state.boxes.map(b => `
     <div class="ab-row">
+      <input type="checkbox" class="ab-sel" data-sel="${b.id}" ${boxSelected(b.id) ? 'checked' : ''} title="勾选=参与装载">
       <span class="color-dot" style="background:${b.color}"></span>
       <label title="${esc(b.name)}">${esc(b.name)}</label>
       <input type="number" min="0" value="${window.state.loadQty[b.id] || 0}" data-boxid="${b.id}">
       <span class="unit">箱</span>
     </div>`).join('');
+  ab.querySelectorAll('.ab-sel').forEach(chk => {
+    chk.addEventListener('change', () => {
+      window.state.loadSel[chk.dataset.sel] = chk.checked;
+      renderBoxList();
+      toast(chk.checked ? `「${window.state.boxes.find(b => b.id === chk.dataset.sel)?.name || ''}」已参与装载` : `已忽略「${window.state.boxes.find(b => b.id === chk.dataset.sel)?.name || ''}」，仅装其余箱型`, chk.checked ? 'ok' : '');
+    });
+  });
   ab.querySelectorAll('input[data-boxid]').forEach(inp => {
     inp.addEventListener('input', () => {
-      const id = inp.dataset.boxid;
-      window.state.loadQty[id] = Math.max(0, Math.floor(+inp.value) || 0);
-      // 同步卡片徽章（不重建输入框，避免打断输入）
-      document.querySelectorAll(`[data-qty="${id}"]`).forEach(badge => {
-        badge.textContent = window.state.loadQty[id];
-        badge.classList.toggle('zero', !window.state.loadQty[id]);
-      });
+      window.state.loadQty[inp.dataset.boxid] = Math.max(0, Math.floor(+inp.value) || 0);
+      syncQtyUI(inp.dataset.boxid);
+    });
+    inp.addEventListener('change', () => {
+      window.state.loadQty[inp.dataset.boxid] = Math.max(0, Math.floor(+inp.value) || 0);
+      syncQtyUI(inp.dataset.boxid);
     });
   });
 }
@@ -361,11 +394,69 @@ function dupLayer() {
 
 /* ---------------- 自动装载 ---------------- */
 
+function boxTypesForLoad() {
+  return window.state.boxes.map(b => ({
+    id: b.id, name: b.name, L: b.L, W: b.W, H: b.H,
+    weight: b.weight, color: b.color, maxStack: (b.max || b.maxStack || 8), rotatable: b.rotatable !== false
+  }));
+}
+const boxTypesForCurrent = boxTypesForLoad;
+
+/* ⚡ 满载测算：当前柜对单一箱型的最大可装数，直接排布出图 */
+function singleBoxMax(boxId) {
+  const box = window.state.boxes.find(b => b.id === boxId);
+  const cont = currentContainer();
+  if (!box || !cont) { toast('请先配置柜型', 'err'); return; }
+  const allowRotate = $('#auto-rotate').checked;
+  const r = window.packer.singleTypeLayout(cont, { ...box, max: (box.max || box.maxStack || 8) }, { allowRotate });
+  if (!r.count) { toast('该箱型放不进当前柜', 'err'); return; }
+  // 只装这一种：仅该箱型勾选，其余忽略
+  for (const b of window.state.boxes) window.state.loadSel[b.id] = (b.id === boxId);
+  setLoadQty(boxId, r.count);
+  renderBoxList();
+  renderAutoBoxes();
+  autoLoad();
+  toast(`⚡ 当前柜最多可装「${box.name}」${r.count} 箱，已直接模拟`);
+}
+
+/* 🧱 填满剩余：按勾选箱型放大数量，把当前柜填到装不下 */
+function fillRemain() {
+  const cont = currentContainer();
+  if (!cont) { toast('请先配置柜型', 'err'); return; }
+  const counts = {};
+  for (const b of window.state.boxes) {
+    if (!boxSelected(b.id)) continue;
+    counts[b.id] = window.state.loadQty[b.id] || 1;
+  }
+  if (!Object.keys(counts).length) { toast('请先勾选要装载的箱型', 'err'); return; }
+  const mode = $('#auto-mode').value;
+  const allowRotate = $('#auto-rotate').checked;
+  const container = { ...cont };
+  $('#auto-status').textContent = '填满计算中…';
+  setTimeout(() => {
+    const res = window.packer.fillToCapacity(container, boxTypesForCurrent(), counts, { mode, allowRotate });
+    if (!res || !res.containers.length) { $('#auto-status').textContent = ''; toast('无可装载箱型', 'err'); return; }
+    // 把实际装下的数量同步回 loadQty，用户可改数重跑
+    const stat = {};
+    res.containers[0].boxes.forEach(b => { stat[b.boxId] = (stat[b.boxId] || 0) + 1; });
+    for (const [id, n] of Object.entries(stat)) window.state.loadQty[id] = n;
+    window.state.cabinets = [{
+      container: { ...res.containers[0].container },
+      boxes: res.containers[0].boxes.map(b => ({ ...b, id: nextBoxId() }))
+    }];
+    window.state.currentCab = 0;
+    refreshAll();
+    $('#auto-status').textContent = res.gapReport;
+    toast('✓ ' + res.gapReport, 'ok');
+  }, 30);
+}
+
 function autoLoad() {
   const inputs = [...document.querySelectorAll('#auto-boxes input[data-boxid]')];
   const counts = {};
   let total = 0;
   inputs.forEach(i => {
+    if (!boxSelected(i.dataset.boxid)) return; // 未勾选的箱型忽略
     const n = parseInt(i.value, 10) || 0;
     if (n > 0) { counts[i.dataset.boxid] = n; total += n; }
   });
@@ -373,10 +464,7 @@ function autoLoad() {
   const cont = currentContainer();
   if (!cont) { toast('请先配置柜型', 'err'); return; }
 
-  const boxTypes = window.state.boxes.map(b => ({
-    id: b.id, name: b.name, L: b.L, W: b.W, H: b.H,
-    weight: b.weight, color: b.color, maxStack: (b.max || b.maxStack || 8), rotatable: b.rotatable !== false
-  }));
+  const boxTypes = boxTypesForCurrent();
   const container = { ...cont };
   const allowRotate = $('#auto-rotate').checked;
   const mode = $('#auto-mode').value;
@@ -401,7 +489,9 @@ function autoLoad() {
     }
     window.state.currentCab = 0;
     refreshAll();
-    $('#auto-status').textContent = result.gapReport;
+    const lowHint = result.volumeUtil < 0.3 && !result.remaining.length
+      ? '，利用率偏低，可点「填满剩余」' : '';
+    $('#auto-status').textContent = result.gapReport + lowHint;
     if (result.remaining.length) {
       toast(`⚠ ${result.remaining.length} 箱装不下：${result.gapReport}`, 'err');
     } else {
@@ -586,6 +676,7 @@ function bindUI() {
   $('#snap-select').addEventListener('change', (e) => { window.scene.snap = +e.target.value; });
 
   $('#btn-auto-run').addEventListener('click', autoLoad);
+  $('#btn-fill-remain').addEventListener('click', fillRemain);
   $('#btn-add-cabinet').addEventListener('click', addCabinet);
   $('#btn-del-cabinet').addEventListener('click', delCurrentCabinet);
 

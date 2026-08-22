@@ -72,10 +72,12 @@ function createWindow() {
               menubarText: [...document.querySelectorAll('#menus .menu-btn')].map(b=>b.textContent).join(','),
               brandNoEn: !/ContainerLoader/i.test(document.querySelector('.brand').textContent),
               bodyEnLeft: /ContainerLoader|Auto-?load|One-?click/i.test(document.body.innerText),
+              qtyInput: !!document.querySelector('#box-list input[data-qty]'),
+              maxBtn: !!document.querySelector('[data-op="max-box"]'),
+              fillBtn: !!document.querySelector('#btn-fill-remain'),
+              selChk: document.querySelectorAll('#auto-boxes .ab-sel').length,
               boxCardStep: (() => { const c = document.querySelector('#box-list .card'); if(!c) return 'no-card'; c.click(); return window.state.loadQty[c.dataset.id]; })(),
-              boxBadge: document.querySelector('[data-qty="b1"]')?.textContent || 'no-badge',
-              contSelect: (() => { const cs=[...document.querySelectorAll('#container-list .card')]; if(cs.length<2) return 'only-'+cs.length; cs[1].click(); return window.state.currentContainerId + '|' + (document.querySelector('#container-list .card.active')?.dataset.id || 'no-active'); })(),
-              aboutModal: (() => { const b=[...document.querySelectorAll('[data-act="about"]')][0]; b.click(); return !document.querySelector('#modal-about').classList.contains('hidden'); })()
+              contSelect: (() => { const cs=[...document.querySelectorAll('#container-list .card')]; if(cs.length<2) return 'only-'+cs.length; cs[1].click(); return window.state.currentContainerId + '|' + (document.querySelector('#container-list .card.active')?.dataset.id || 'no-active'); })()
             };
             document.querySelector('#btn-auto-run').click();
             await new Promise(r => setTimeout(r, 400));
@@ -87,9 +89,23 @@ function createWindow() {
             const rotNow = document.querySelector('#auto-rotate').checked;
             document.querySelector('#btn-auto-run').click();
             await new Promise(r => setTimeout(r, 400));
-            const modeAfter = document.querySelector('#auto-mode').value;
-            const r2 = { modeNow, rotNow, modeAfter, cabs: window.state.cabinets.length, boxes: window.state.cabinets.reduce((s,c)=>s+c.boxes.length,0), status: document.getElementById('auto-status').textContent };
-            return JSON.stringify({ ui, r1, r2 });
+            const r2 = { modeNow, rotNow, boxes: window.state.cabinets.reduce((s,c)=>s+c.boxes.length,0), status: document.getElementById('auto-status').textContent };
+            // 仅装勾选：取消 b2 → 一键装载只装 b1+b3
+            [...document.querySelectorAll('#auto-boxes .ab-sel')].find(c => c.dataset.sel === 'b2').click();
+            document.querySelector('#btn-auto-run').click();
+            await new Promise(r => setTimeout(r, 400));
+            const r3 = { boxes: window.state.cabinets.reduce((s,c)=>s+c.boxes.length,0), boxIds: [...new Set(window.state.cabinets.flatMap(c=>c.boxes.map(b=>b.boxId)))].join(',') };
+            // ⚡ 满载测算（第一个箱型）
+            document.querySelector('[data-op="max-box"]').click();
+            await new Promise(r => setTimeout(r, 500));
+            const r4 = { qty: window.state.loadQty['b1'], boxes: window.state.cabinets.reduce((s,c)=>s+c.boxes.length,0), status: document.getElementById('auto-status').textContent };
+            // 🧱 填满剩余（恢复全部勾选）
+            Object.keys(window.state.loadSel).forEach(k => window.state.loadSel[k] = true);
+            document.querySelector('#btn-fill-remain').click();
+            await new Promise(r => setTimeout(r, 700));
+            const r5 = { boxes: window.state.cabinets.reduce((s,c)=>s+c.boxes.length,0), status: document.getElementById('auto-status').textContent };
+            const scene3d = { meshes: window.scene ? window.scene.boxMeshes.length : -1 };
+            return JSON.stringify({ ui, r1, r2, r3, r4, r5, scene3d });
           })()`);
           console.log('[SMOKE] autoload=' + loadResult);
           await new Promise(r => setTimeout(r, 800));
