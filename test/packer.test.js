@@ -3,7 +3,7 @@
  * packer 单元测试：验证几何不重叠、柜内约束、载重、承压
  */
 const assert = require('assert');
-const { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, packAll, singleTypeLayout, fillToCapacity } = require('../src/js/packer.js');
+const { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, orientations, normalizeRot, packAll, singleTypeLayout, fillToCapacity } = require('../src/js/packer.js');
 
 function checkNoOverlap(boxes) {
   for (let i = 0; i < boxes.length; i++) {
@@ -178,6 +178,32 @@ function packC(cont, boxTypes, counts, opt) {
   }).length;
   assert(touchLeftOrWall / boxes.length > 0.8, `压实后应 ≥80% 箱子贴左缘，实际 ${(touchLeftOrWall / boxes.length * 100).toFixed(0)}%`);
   console.log(`✓ 压实：${boxes.length} 箱无重叠越界，${(touchLeftOrWall / boxes.length * 100).toFixed(0)}% 贴左缘/柜壁`);
+}
+
+// 测试 11：三档旋转——flat 仅水平转（高度不变、禁立放）；all 可立放多装
+{
+  // orientations 单元级
+  const oFlat = orientations({ dx: 700, dy: 500, dz: 200, rotatable: 'flat' }, true);
+  assert(oFlat.length === 2, `flat 应有 2 朝向，实际 ${oFlat.length}`);
+  assert(oFlat.every(p => p[2] === 200), 'flat 存在立放朝向（高度被改变）');
+  const oNone = orientations({ dx: 700, dy: 500, dz: 200, rotatable: 'none' }, true);
+  assert(oNone.length === 1 && oNone[0][0] === 700, 'none 应只有标准朝向');
+  const oLegacy = orientations({ dx: 700, dy: 500, dz: 200, rotatable: true }, true);
+  assert(oLegacy.length === 6, `旧布尔 true 应归一化为 all（6 朝向），实际 ${oLegacy.length}`);
+  // normalizeRot 兼容旧数据
+  assert(normalizeRot(false) === 'none' && normalizeRot(true) === 'all' && normalizeRot(undefined) === 'all' && normalizeRot('flat') === 'flat' && normalizeRot(0) === 'none');
+
+  // 整柜对比：1000×1000×500 柜、700×500×200 箱
+  const c = { name: 'test', L: 1000, W: 1000, H: 500, maxWeight: 99999 };
+  const mk = (rot) => [{ id: 'r3', name: '三档箱', L: 700, W: 500, H: 200, weight: 1, maxStack: 10, rotatable: rot }];
+  const flat = packAll(c, mk('flat'), { 'r3': 6 }, { maxContainers: 1, iterations: 10, allowRotate: true });
+  assert(flat.packed === 4, `flat 档应装 4（禁立放），实际 ${flat.packed}`);
+  const noStand = flat.containers[0].boxes.every(b => b.dz === 200 && (b.rotLabel === '标准' || b.rotLabel === '水平转90°'));
+  assert(noStand, 'flat 档存在立放箱子');
+  const all = packAll(c, mk('all'), { 'r3': 6 }, { maxContainers: 1, iterations: 10, allowRotate: true });
+  assert(all.packed === 5, `all 档应装 5（含立放多装 1），实际 ${all.packed}`);
+  for (const cc of flat.containers) { checkInside(cc.boxes, cc.container); checkNoOverlap(cc.boxes); }
+  console.log('✓ 三档旋转：flat 仅水平转禁立放（4 箱全 dz=200）；all 可立放装 5；旧布尔/none 兼容');
 }
 
 console.log('\n全部通过 ✅');

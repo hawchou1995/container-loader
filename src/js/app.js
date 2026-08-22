@@ -174,7 +174,7 @@ function renderBoxList() {
     <div class="card" data-id="${b.id}" title="点击加箱 1 个">
       <span class="color-dot" style="background:${b.color}"></span>
       <span class="card-title">${esc(b.name)}</span>
-      <div class="card-sub">${b.L}×${b.W}×${b.H}mm · ${b.weight}kg${b.rotatable ? '' : ' · 禁旋转'}</div>
+      <div class="card-sub">${b.L}×${b.W}×${b.H}mm · ${b.weight}kg${b.rotatable === 'flat' ? ' · 仅水平转' : (b.rotatable === false || b.rotatable === 'none' ? ' · 禁旋转' : '')}</div>
       <div class="card-qty">
         <button data-op="minus-box" title="减 1 箱">−</button>
         <input type="number" min="0" class="qty-badge-input" data-qty="${b.id}" value="${window.state.loadQty[b.id] || 0}" title="直接输入数量，回车生效">
@@ -334,7 +334,9 @@ function openBoxModal(id) {
   $('#b-weight').value = b ? b.weight : 15;
   $('#b-maxstack').value = b ? (b.maxStack || b.max || 8) : 8;
   $('#b-color').value = b ? b.color : '#4f9df7';
-  $('#b-norot').checked = b ? !b.rotatable : false;
+  const rotMode = b ? (b.rotatable === 'flat' ? 'flat' : (b.rotatable === false || b.rotatable === 'none' ? 'none' : 'all')) : 'all';
+  const rotRadio = document.querySelector(`input[name="b-rot"][value="${rotMode}"]`);
+  if (rotRadio) rotRadio.checked = true;
   $('#modal-box').classList.remove('hidden');
   window._editBoxId = id || null;
 }
@@ -397,7 +399,8 @@ function dupLayer() {
 function boxTypesForLoad() {
   return window.state.boxes.map(b => ({
     id: b.id, name: b.name, L: b.L, W: b.W, H: b.H,
-    weight: b.weight, color: b.color, maxStack: (b.max || b.maxStack || 8), rotatable: b.rotatable !== false
+    weight: b.weight, color: b.color, maxStack: (b.max || b.maxStack || 8),
+    rotatable: b.rotatable === 'flat' ? 'flat' : (b.rotatable === false || b.rotatable === 'none' ? 'none' : 'all')
   }));
 }
 const boxTypesForCurrent = boxTypesForLoad;
@@ -688,7 +691,7 @@ function bindUI() {
       name: $('#b-name').value || '未命名',
       L: Math.round(+$('#b-L').value), W: Math.round(+$('#b-W').value), H: Math.round(+$('#b-H').value),
       weight: +$('#b-weight').value, max: Math.max(1, +$('#b-maxstack').value || 8),
-      color: $('#b-color').value, rotatable: !$('#b-norot').checked
+      color: $('#b-color').value, rotatable: (document.querySelector('input[name="b-rot"]:checked') || {}).value || 'all'
     };
     if (!data.L || !data.W || !data.H) { toast('尺寸必填', 'err'); return; }
     if (id) {

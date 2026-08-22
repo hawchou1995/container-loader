@@ -42,7 +42,7 @@ function expandItems(boxTypes, counts) {
         weight: bt.weight || 0,
         color: bt.color || '#888888',
         maxStack: Math.max(1, bt.maxStack || 10),
-        rotatable: bt.rotatable !== false,
+        rotatable: normalizeRot(bt.rotatable),
         vol: bt.L * bt.W * bt.H
       });
     }
@@ -50,14 +50,26 @@ function expandItems(boxTypes, counts) {
   return items;
 }
 
-/** 箱子朝向（去重）：allowRotate=false 时仅标准朝向 */
+/** 旋转档位归一化：false/无 → 'none'；'flat' 相关 → 'flat'；其余（true/缺省/旧数据）→ 'all' */
+function normalizeRot(v) {
+  if (v === false || v === 'none' || v === 'no' || v === 'off' || v === 0) return 'none';
+  if (v === 'flat' || v === 'flat-only' || v === '水平' || v === '仅水平' || v === 'allow-flat') return 'flat';
+  return 'all';
+}
+
+/**
+ * 箱子朝向（去重）：
+ *  - allowRotate=false 或 rotatable='none' → 仅标准朝向
+ *  - rotatable='flat' → 仅水平旋转（长宽互换，高度不变，禁立放）
+ *  - 其余（'all'）→ 6 种全排列（含立放）
+ */
 function orientations(it, allowRotate = true) {
   const { dx, dy, dz } = it;
-  if (!allowRotate || it.rotatable === false) return [[dx, dy, dz]];
-  const perms = [
-    [dx, dy, dz], [dx, dz, dy], [dy, dx, dz],
-    [dy, dz, dx], [dz, dx, dy], [dz, dy, dx]
-  ];
+  const mode = normalizeRot(it.rotatable);
+  if (!allowRotate || mode === 'none') return [[dx, dy, dz]];
+  const perms = mode === 'flat'
+    ? [[dx, dy, dz], [dy, dx, dz]]
+    : [[dx, dy, dz], [dx, dz, dy], [dy, dx, dz], [dy, dz, dx], [dz, dx, dy], [dz, dy, dx]];
   const seen = new Set();
   const list = [];
   for (const p of perms) {
@@ -189,7 +201,7 @@ function singleTypeLayout(container, box, { allowRotate = true } = {}) {
   // 归一化箱型字段：兼容 {L,W,H} 与 {dx,dy,dz} 两种命名
   const dim = {
     dx: box.dx || box.L, dy: box.dy || box.W, dz: box.dz || box.H,
-    rotatable: box.rotatable !== false
+    rotatable: normalizeRot(box.rotatable)
   };
   const perms = orientations(dim, allowRotate);
   let best = null;
@@ -361,7 +373,7 @@ function rotLabel(it, sw, sd, sh) {
 
 // 浏览器 / Node 双端导出
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, orientations, packContainer, packAll, compactLayout, singleTypeLayout, fillToCapacity };
+  module.exports = { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, orientations, normalizeRot, packContainer, packAll, compactLayout, singleTypeLayout, fillToCapacity };
 } else {
-  window.packer = { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, orientations, packContainer, packAll, compactLayout, singleTypeLayout, fillToCapacity };
+  window.packer = { DEFAULT_CONTAINERS, DEFAULT_BOXES, expandItems, orientations, normalizeRot, packContainer, packAll, compactLayout, singleTypeLayout, fillToCapacity };
 }

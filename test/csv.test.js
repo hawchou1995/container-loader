@@ -45,7 +45,7 @@ const { parseCSV, parseHeader, mergeBoxesFromCSV } = require('../src/js/csv.js')
   const upd = res.boxes.find(b => b.name === '老箱');
   assert.strictEqual(upd.id, 'x1', '同名更新应保留原 id');
   assert.strictEqual(upd.L, 200);
-  assert.strictEqual(upd.rotatable, false, '可旋转=认 应解析为 false');
+  assert.strictEqual(upd.rotatable, 'none', '可旋转=否 应解析为 none（禁旋转）');
   const fresh = res.boxes.find(b => b.name === '新箱');
   assert(fresh && fresh.id.startsWith('b'), '新增箱型 id 应以 b 开头');
   assert.strictEqual(fresh.weight, 3);
@@ -71,11 +71,27 @@ const { parseCSV, parseHeader, mergeBoxesFromCSV } = require('../src/js/csv.js')
   assert.strictEqual(res.added, 2);
   const en = res.boxes.find(b => b.name === 'EN箱');
   assert.strictEqual(en.L, 400);
-  assert.strictEqual(en.rotatable, false, 'rotatable=0 应不可旋转');
+  assert.strictEqual(en.rotatable, 'none', 'rotatable=0 应解析为 none（禁旋转）');
   const light = res.boxes.find(b => b.name === '轻箱');
   assert.strictEqual(light.weight, 0, '重量缺省应 0');
   assert.strictEqual(light.color, '#4f9df7', '颜色缺省应默认色');
   console.log('✓ 英文表头/默认值（重量 0、默认颜色、rotatable 解析）');
+}
+
+// 测试 6：可旋转列三值解析（all / flat / none）
+{
+  const rows = parseCSV('名称,长,宽,高,可旋转\n' +
+    '全转箱,100,100,100,是\n' +
+    '水平箱,100,100,100,仅水平\n' +
+    '立放箱,100,100,100,禁立放\n' +
+    '禁转箱,100,100,100,禁止\n');
+  const res = mergeBoxesFromCSV([], rows);
+  assert.strictEqual(res.added, 4);
+  assert.strictEqual(res.boxes.find(b => b.name === '全转箱').rotatable, 'all', '是 → all');
+  assert.strictEqual(res.boxes.find(b => b.name === '水平箱').rotatable, 'flat', '仅水平 → flat');
+  assert.strictEqual(res.boxes.find(b => b.name === '立放箱').rotatable, 'flat', '禁立放 → flat');
+  assert.strictEqual(res.boxes.find(b => b.name === '禁转箱').rotatable, 'none', '禁止 → none');
+  console.log('✓ 可旋转三值：是=all / 仅水平/禁立放=flat / 禁止=none');
 }
 
 console.log('\n全部通过 ✅');

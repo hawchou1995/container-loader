@@ -104,8 +104,21 @@ function createWindow() {
             document.querySelector('#btn-fill-remain').click();
             await new Promise(r => setTimeout(r, 700));
             const r5 = { boxes: window.state.cabinets.reduce((s,c)=>s+c.boxes.length,0), status: document.getElementById('auto-status').textContent };
+            // r6: 三档旋转 UI 链路——编辑 b1 → 选「仅水平转」→ 保存 → 卡片标记 → 恢复 all
+            const b1Card = document.querySelector('#box-list [data-id="b1"]');
+            b1Card.querySelector('[data-op="edit-box"]').click();
+            const radioCount = document.querySelectorAll('input[name="b-rot"]').length;
+            document.querySelector('input[name="b-rot"][value="flat"]').checked = true;
+            document.querySelector('#b-ok').click();
+            const rotAfterFlat = window.state.boxes.find(b=>b.id==='b1').rotatable;
+            const cardMark = document.querySelector('#box-list [data-id="b1"] .card-sub').textContent;
+            b1Card.querySelector('[data-op="edit-box"]').click();
+            document.querySelector('input[name="b-rot"][value="all"]').checked = true;
+            document.querySelector('#b-ok').click();
+            const rotRestored = window.state.boxes.find(b=>b.id==='b1').rotatable;
+            const r6 = { radioCount, rotAfterFlat, cardMark, rotRestored };
             const scene3d = { meshes: window.scene ? window.scene.boxMeshes.length : -1 };
-            return JSON.stringify({ ui, r1, r2, r3, r4, r5, scene3d });
+            return JSON.stringify({ ui, r1, r2, r3, r4, r5, r6, scene3d });
           })()`);
           console.log('[SMOKE] autoload=' + loadResult);
           await new Promise(r => setTimeout(r, 800));

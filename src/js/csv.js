@@ -8,7 +8,7 @@
  *   name,L,W,H,weight,maxStack,color,rotatable
  *
  * 列名别名：名称/name、长/L、宽/W、高/H、重量/weight、最大堆叠|堆叠/maxStack、
- *           颜色/color、可旋转/rotatable（1/true/是/允许 = 可旋转）
+ *           颜色/color、可旋转/rotatable（是/允许/1/true/yes=全朝向；仅水平/禁立放/flat=仅水平转；否/禁止/0/false/no=禁止旋转；空=全朝向）
  * 必需列：名称、长、宽、高（重量缺省 0）
  */
 
@@ -117,8 +117,14 @@ function mergeBoxesFromCSV(boxes, rows) {
     }
     const weight = toNum(get('weight'));
     const maxStack = toNum(get('maxStack'));
-    const rotRaw = get('rotatable').toLowerCase();
-    const rotatable = !rotRaw || ['1', 'yes', 'true', '是', '允许'].includes(rotRaw);
+    // 可旋转列三值：空/是/允许/1/true/yes → all（全朝向）；flat/仅水平/禁立放 → flat（仅水平转）；
+    // 否/禁止/0/false/no → none（禁止旋转）
+    const rotRaw = get('rotatable').trim().toLowerCase();
+    let rotatable = 'all';
+    if (rotRaw) {
+      if (['0', 'no', 'false', '否', '禁止', '不允许', 'never', 'none'].includes(rotRaw)) rotatable = 'none';
+      else if (['flat', '仅水平', '水平', '禁立放', '平放', 'allow-flat', 'flat-only'].includes(rotRaw)) rotatable = 'flat';
+    }
     const rec = {
       name,
       L, W, H,

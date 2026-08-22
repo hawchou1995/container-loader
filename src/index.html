@@ -192,7 +192,14 @@
         <label>重量 (kg) <input id="b-weight" type="number" min="0" step="0.1"></label>
         <label>最大堆叠层数 <input id="b-maxstack" type="number" min="1" value="8"></label>
         <label>颜色 <input id="b-color" type="color" value="#4f9df7"></label>
-        <label>禁止旋转 <input id="b-norot" type="checkbox" style="width:auto;margin-left:8px"></label>
+        <div class="form-grid rot-grid">
+          <span class="form-label">旋转方式</span>
+          <div class="rot-opts">
+            <label><input type="radio" name="b-rot" value="all" checked> 允许旋转（含立放）</label>
+            <label><input type="radio" name="b-rot" value="flat"> 仅水平转（禁立放）</label>
+            <label><input type="radio" name="b-rot" value="none"> 禁止旋转</label>
+          </div>
+        </div>
       </div>
       <div class="modal-actions">
         <button id="b-cancel" class="btn">取消</button>
