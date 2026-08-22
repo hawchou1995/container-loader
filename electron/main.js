@@ -88,8 +88,14 @@ function createWindow() {
           const img = await mainWindow.webContents.capturePage();
           const png = img.toPNG();
           console.log('[SMOKE] png bytes=' + png.length);
-          fs.writeFileSync(path.join(__dirname, '..', 'docs', 'smoke-screenshot.png'), png);
-          console.log('[SMOKE] screenshot saved');
+          // 截图写到临时目录（打包后 docs/ 在 asar 内不可写）
+          try {
+            const shot = path.join(os.tmpdir(), 'container-loader-smoke.png');
+            fs.writeFileSync(shot, png);
+            console.log('[SMOKE] screenshot saved ' + shot);
+          } catch (e) {
+            console.log('[SMOKE] screenshot skip ' + e.message);
+          }
         } catch (e) {
           console.log('[SMOKE] error ' + e.message);
         }
