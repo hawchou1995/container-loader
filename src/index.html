@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; script-src 'self'">
+  <title>装柜大师 ContainerLoader</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">▣</span>
+      <h1>装柜大师 <small>ContainerLoader v1.0</small></h1>
+    </div>
+    <div class="actions">
+      <button id="btn-new" class="btn">新建方案</button>
+      <button id="btn-open" class="btn">打开方案</button>
+      <button id="btn-save" class="btn primary">保存方案</button>
+      <span class="sep"></span>
+      <button id="btn-export-pdf" class="btn">📄 PDF报告</button>
+      <button id="btn-export-png" class="btn">📷 截图</button>
+      <button id="btn-export-excel" class="btn">📊 Excel明细</button>
+      <button id="btn-export-html" class="btn">🌐 HTML报告</button>
+      <span class="sep"></span>
+      <a href="#" id="btn-data-dir" class="btn subtle" title="打开数据目录">🗂 数据目录</a>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- 左栏：箱型 / 柜型 -->
+    <aside class="left-panel">
+      <section class="panel-section">
+        <h2>箱型规格</h2>
+        <div id="box-list" class="card-list"></div>
+        <button id="btn-add-box" class="btn small full">+ 新增箱型</button>
+      </section>
+      <section class="panel-section">
+        <h2>货柜规格</h2>
+        <div id="container-list" class="card-list"></div>
+        <button id="btn-add-container" class="btn small full">+ 新增柜型</button>
+      </section>
+    </aside>
+
+    <!-- 中央：3D 场景 -->
+    <main class="viewport">
+      <div class="view-toolbar">
+        <span class="view-label">视图：</span>
+        <button data-view="front" class="btn tiny active">前视</button>
+        <button data-view="back" class="btn tiny">后视</button>
+        <button data-view="left" class="btn tiny">左视</button>
+        <button data-view="right" class="btn tiny">右视</button>
+        <button data-view="top" class="btn tiny">顶视</button>
+        <button data-view="iso" class="btn tiny">立体</button>
+        <span class="sep"></span>
+        <button id="btn-dup-layer" class="btn tiny" title="把当前最上层复制到上一层">↑ 复制本层到上一层</button>
+        <button id="btn-lock" class="btn tiny toggle-on" title="锁定：拖箱子；解锁：移动整体/旋转视角">🔒 锁定</button>
+        <span class="sep"></span>
+        <label class="grid-snap">吸附
+          <select id="snap-select">
+            <option value="1">1mm</option>
+            <option value="5">5mm</option>
+            <option value="10" selected>10mm</option>
+            <option value="50">50mm</option>
+          </select>
+        </label>
+      </div>
+      <div id="scene-container"></div>
+      <div id="scene-hint">
+        <b>操作提示：</b>锁定状态拖箱子移动（自动吸附面）｜右键/滚轮旋转缩放视角｜点选箱子，Q/E 旋转90°｜Delete 删除｜双击空白处切换视角
+      </div>
+      <!-- 自动装载面板 -->
+      <div id="auto-panel">
+        <div class="auto-header">
+          <span class="auto-title">⚡ 自动装载</span>
+          <span id="auto-status" class="auto-status"></span>
+          <button id="btn-auto-run" class="btn small primary">一键装载</button>
+        </div>
+        <div id="auto-boxes" class="auto-boxes"></div>
+      </div>
+    </main>
+
+    <!-- 右栏：信息 / 统计 -->
+    <aside class="right-panel">
+      <section class="panel-section">
+        <h2>货柜</h2>
+        <div id="container-tabs" class="tabs"></div>
+        <button id="btn-add-cabinet" class="btn small full">+ 添加货柜</button>
+        <button id="btn-del-cabinet" class="btn small full danger">删除此柜</button>
+      </section>
+      <section class="panel-section">
+        <h2>装载信息</h2>
+        <table id="info-table" class="info-table">
+          <tr><td>柜型</td><td id="info-name">-</td></tr>
+          <tr><td>内径尺寸</td><td id="info-dims">-</td></tr>
+          <tr><td>内容积</td><td id="info-volume">-</td></tr>
+          <tr><td>最大载重</td><td id="info-maxw">-</td></tr>
+          <tr><td>已装体积</td><td id="info-usedvol">-</td></tr>
+          <tr><td>容积占比</td><td id="info-rate">-</td></tr>
+          <tr><td>已装总重</td><td id="info-weight">-</td></tr>
+          <tr><td>箱数</td><td id="info-count">-</td></tr>
+        </table>
+      </section>
+      <section class="panel-section">
+        <h2>货物统计</h2>
+        <div id="cargo-stats" class="cargo-stats">暂无</div>
+      </section>
+    </aside>
+  </div>
+
+  <!-- 弹窗：箱型编辑 -->
+  <div id="modal-box" class="modal hidden">
+    <div class="modal-card">
+      <h3 id="modal-box-title">新增箱型</h3>
+      <div class="form-grid">
+        <label>名称 <input id="b-name" placeholder="如 纸箱M"></label>
+        <label>长 L (mm) <input id="b-L" type="number" min="1"></label>
+        <label>宽 W (mm) <input id="b-W" type="number" min="1"></label>
+        <label>高 H (mm) <input id="b-H" type="number" min="1"></label>
+        <label>重量 (kg) <input id="b-weight" type="number" min="0" step="0.1"></label>
+        <label>最大堆叠层数 <input id="b-maxstack" type="number" min="1" value="8"></label>
+        <label>颜色 <input id="b-color" type="color" value="#4f9df7"></label>
+        <label>禁止旋转 <input id="b-norot" type="checkbox" style="width:auto;margin-left:8px"></label>
+      </div>
+      <div class="modal-actions">
+        <button id="b-cancel" class="btn">取消</button>
+        <button id="b-ok" class="btn primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 弹窗：柜型编辑 -->
+  <div id="modal-container" class="modal hidden">
+    <div class="modal-card">
+      <h3 id="modal-container-title">新增柜型</h3>
+      <div class="form-grid">
+        <label>名称 <input id="c-name" placeholder="如 40HQ"></label>
+        <label>内长 L (mm) <input id="c-L" type="number" min="1"></label>
+        <label>内宽 W (mm) <input id="c-W" type="number" min="1"></label>
+        <label>内高 H (mm) <input id="c-H" type="number" min="1"></label>
+        <label>最大载重 (kg) <input id="c-weight" type="number" min="0"></label>
+      </div>
+      <div class="modal-actions">
+        <button id="c-cancel" class="btn">取消</button>
+        <button id="c-ok" class="btn primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="lib/three.min.js"></script>
+  <script src="js/packer.js"></script>
+  <script src="js/scene3d.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

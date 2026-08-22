@@ -1,0 +1,47 @@
+{
+  "name": "container-loader",
+  "version": "1.0.0",
+  "description": "3D 装柜计算软件：多箱型混装、自动装载优化、PDF/Excel/HTML/PNG 报告导出",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "test": "node test/packer.test.js"
+  },
+  "author": "hawchou1995",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "three": "^0.170.0",
+    "xlsx": "^0.18.5"
+  },
+  "build": {
+    "appId": "com.hawchou.container-loader",
+    "productName": "ContainerLoader",
+    "artifactName": "container-loader-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "装柜大师 ContainerLoader"
+    }
+  }
+}
